@@ -73,6 +73,7 @@ PROJECTS = os.path.join(os.path.expanduser("~"), ".claude", "projects")
 sys.path.insert(0, os.path.join(ROOT, "trader-scanner"))
 sys.path.insert(0, HERE)
 import live  # noqa: E402
+import update  # noqa: E402
 
 
 def p(*parts):
@@ -216,7 +217,7 @@ def build_state():
                 for r in rows][-60:],
         "inbox": inbox[-20:],
         "alpaca": live.alpaca_state(), "desk_chat": live.chat_state(DESK),
-        "repo": REPO, "standalone": REPO is None,
+        "repo": REPO, "standalone": REPO is None, "update": update.cached(),
     }
 
 
@@ -458,7 +459,11 @@ class Handler(BaseHTTPRequestHandler):
                 with open(os.path.join(HERE, "saladi.ico" if u.path.endswith(".ico") else "saladi.png"), "rb") as fh:
                     return self._send(200, fh.read(), "image/x-icon" if u.path.endswith(".ico") else "image/png")
             if u.path == "/api/version":
-                return self._send(200, {"app": "saladi", "build": BUILD})
+                return self._send(200, {"app": "saladi", "build": BUILD, "version": update.version()})
+            if u.path == "/api/update":
+                info = update.check(force=q.get("force") == "1")
+                live.bump()
+                return self._send(200, info)
             if u.path == "/api/state":
                 return self._send(200, build_state())
             if u.path == "/api/bars":
@@ -567,6 +572,11 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/api/settings/connection":
                 return self._send(200, {"ok": True, "message": live.save_connection(
                     body.get("name"), body.get("key"), body.get("note"), bool(body.get("remove")))})
+            if self.path == "/api/update":
+                ver = update.apply()
+                self._send(200, {"ok": True, "message": "Installing Saladi %s. The app restarts in a moment." % ver})
+                threading.Timer(1.5, lambda: os._exit(0)).start()
+                return None
             if self.path == "/api/watch":
                 sym = str(body.get("symbol", "")).upper()[:10]
                 if sym.replace(".", "").isalpha():
@@ -642,7 +652,17 @@ def main(argv=None):
     ap.add_argument("--no-open", action="store_true")
     ap.add_argument("--exit-when-closed", action="store_true", default=FROZEN,
                     help="quit when the window is closed (default for TradingDesk.exe)")
+    ap.add_argument("--uninstall", action="store_true", help="remove Saladi from this PC")
+    ap.add_argument("--portable", action="store_true", help="run this exe where it is, without installing")
     a = ap.parse_args(argv)
+    if FROZEN and a.uninstall:
+        update.uninstall()
+        return 0
+    if FROZEN and not a.portable and not update.is_installed_copy():
+        # Saladi-Setup.exe (or any copy outside the install folder): install, start the installed copy, leave.
+        dst = update.install(sys.executable)
+        subprocess.Popen([dst], cwd=os.path.dirname(dst))
+        return 0
     srv = url = None
     for port in range(a.port, a.port + 10):
         url = "http://127.0.0.1:%d/" % port
@@ -661,6 +681,7 @@ def main(argv=None):
         return 1
     print("Saladi on %s (Ctrl+C to stop)" % url, flush=True)
     threading.Thread(target=live.alpaca_loop, daemon=True).start()
+    threading.Thread(target=update.watch, args=(live.bump,), daemon=True).start()
     if a.exit_when_closed:
         threading.Thread(target=exit_when_closed, daemon=True).start()
     print("Desk folder: %s" % (REPO or "none (standalone mode: Alpaca, charts and chat only)"), flush=True)

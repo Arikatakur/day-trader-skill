@@ -188,6 +188,8 @@ details.acc>.body{border-top:1px solid var(--line)}
 @keyframes blink{50%{opacity:0}}
 
 /* the alarm: impossible to miss */
+.upd{display:none;align-items:center;gap:14px;padding:9px 18px;background:var(--accent-soft);border-bottom:1px solid rgba(242,179,61,.35);font-size:14px}
+.upd.on{display:flex} .upd .t{flex:1;min-width:0}
 .alarm{display:none;align-items:center;gap:14px;padding:12px 18px;background:#c9303f;color:#fff;font-size:15px}
 .alarm.on{display:flex}
 .alarm svg{width:24px;height:24px;stroke-width:2.2}
@@ -244,7 +246,7 @@ input.f:focus{outline:none;box-shadow:inset 0 0 0 1.5px var(--accent)}
     <span class="live" id="live"><i></i>LIVE</span>
     <div class="switch" title="Paper only. On: Claude trades with no approval; every entry still needs a risk PASS.">Autotrade <button class="toggle" id="auto-toggle" aria-label="Toggle autotrade"></button></div>
     <button class="btn danger" id="stop-btn">Stop desk</button>
-  </div><div class="alarm" id="alarm" role="alert"></div></header>
+  </div><div class="alarm" id="alarm" role="alert"></div><div class="upd" id="upd"></div></header>
 
   <nav id="nav">
     <button class="navbtn active" data-page="overview" title="Overview"><svg class="i"><use href="#i-home"/></svg><span class="nl">Overview</span></button>
@@ -505,7 +507,8 @@ function renderSettings(s){
     row('Limits', `${money(L.max_loss_per_trade)} a trade · ${money(L.max_daily_loss)} a day · ${esc(L.max_trades)} trades · entries ${esc(L.entries_from)}–${esc(L.entries_until)} · flat by ${esc(L.flat_by)}`, '<span class="muted">edit in trader/config.json</span>'));
   setHTML('app-set',
     row('Desk folder', esc(s.repo || 'Not set: standalone mode (Alpaca, charts and chat only)'), `<input class="f" id="repo" placeholder="C:\\path\\to\\day-trader-skill" style="width:260px"><button class="btn" id="reposave">Save</button>`) +
-    row('Notifications', 'Windows pop-ups and sounds for alerts, fills and stops.', `<button class="btn" id="knotify">Enable</button>`));
+    row('Notifications', 'Windows pop-ups and sounds for alerts, fills and stops.', `<button class="btn" id="knotify">Enable</button>`) +
+    row('Version', `Saladi ${esc(s.update?.current || '')}${s.update?.available ? ` · ${esc(s.update.latest)} is available` : s.update?.latest ? ' · up to date' : ''}${s.update?.checked ? ` · checked ${esc(s.update.checked)}` : ''}`, `<button class="btn" data-upd="check">Check for updates</button>`));
 }
 
 /* ---------- nav ---------- */
@@ -635,6 +638,19 @@ function chartClick(t){
   return false;
 }
 
+/* ---------- updates ---------- */
+function renderUpdate(s){
+  const u = s.update || {}, skip = localStorage.getItem('skip-update'), on = !!u.available && skip !== u.latest;
+  $('upd').classList.toggle('on', on); if (!on) return;
+  setHTML('upd', `<svg class="i" style="color:var(--accent)"><use href="#i-spark"/></svg><span class="t"><b>Saladi ${esc(u.latest)} is available.</b> <span class="muted">You have ${esc(u.current)}.</span>${u.page?` <a href="${esc(u.page)}" target="_blank">What's new</a>`:''}</span>` +
+    (u.can_apply ? `<button class="btn primary" data-upd="apply">Update and restart</button>` : `<span class="muted">This copy runs from source: update it with git pull.</span>`) + `<button class="btn ghost" data-upd="later">Later</button>`);
+}
+async function updClick(t){ const x = t.closest('[data-upd]'); if (!x) return false; const u = STATE.update || {};
+  if (x.dataset.upd === 'later') { localStorage.setItem('skip-update', u.latest); renderUpdate(STATE); }
+  else if (x.dataset.upd === 'check') { toast('Checking for updates'); const r = await (await fetch('/api/update?force=1')).json(); localStorage.removeItem('skip-update'); toast(r.error || (r.available ? `Saladi ${r.latest} is available` : `Saladi ${r.current} is up to date`)); }
+  else { x.disabled = true; x.textContent = 'Downloading'; const j = await act('/api/update', {}); if (!j) { x.disabled = false; x.textContent = 'Update and restart'; } }
+  return true; }
+
 /* ---------- urgent alarm ---------- */
 const ACK = new Set(JSON.parse(sessionStorage.getItem('ack')||'[]')); let SIREN = null, URGENT = [];
 const pageOf = name => Object.keys(GROUPS).find(g => GROUPS[g].includes(name)) || 'overview';
@@ -708,7 +724,7 @@ function notifyDiff(s){
 
 /* ---------- render + wiring ---------- */
 function renderAll(){
-  const s = STATE; renderTicker(s); renderNav(s); renderDeskChat(s); liveCandle(s); notifyDiff(s); renderAlarm(s);
+  const s = STATE; renderTicker(s); renderNav(s); renderDeskChat(s); liveCandle(s); notifyDiff(s); renderAlarm(s); renderUpdate(s);
   ({overview:renderOverview, find:renderFind, plan:renderPlan, trade:renderTrade, review:renderReview, settings:renderSettings})[PAGE](s);
 }
 async function refresh(){ try { STATE = await (await fetch('/api/state')).json(); renderAll(); } catch(e){ toast('Desk server not reachable'); } }
@@ -724,6 +740,7 @@ document.addEventListener('toggle', e => { const d = e.target; if (!d.matches ||
 document.addEventListener('click', async e => {
   const t = e.target;
   if (alarmClick(t) || chartClick(t)) return;
+  if (t.closest('[data-upd]')) return updClick(t);
   const nav = t.closest('[data-page]'); if (nav) return go(nav.dataset.page);
   const sym = t.closest('[data-sym]'); if (sym) { pick(sym.dataset.sym); return go('overview'); }
   const g = t.closest('[data-goto]'); if (g) { e.preventDefault(); return go(g.dataset.goto); }
