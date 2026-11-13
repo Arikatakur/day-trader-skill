@@ -2,6 +2,11 @@
 
 11 Claude skills for day trading: scan thousands of charts, track breaking news, time every entry and exit, and replay every outcome before you risk a dollar.
 
+> **Saladi** is the desktop app for this pack: a live desk with charts, agents,
+> chat and alerts. Start with [docs/saladi.md](docs/saladi.md), then
+> [desk agents](docs/desk-agents.md), [trading rules](docs/trading-rules.md)
+> and [releasing](docs/releasing.md).
+
 Free, MIT, no signup, no API key. The tools are plain Python that read free
 public data: Yahoo Finance charts, Nasdaq Trader's symbol lists, SEC EDGAR
 and the House Clerk.

@@ -55,8 +55,112 @@ after. Newest session first. Rules that have been learned are collected in
 12. **Keep `trader/portfolio.json` cash in line with the budget.** After raising
     `budget`, also raise the portfolio cash, or `size.py` stays bound by the
     old cash. *(2026-11-12)*
+13. **The Allow card is the slowest step, so set the trigger with room.** An
+    order call waits on the user's Allow card, which took 10 to 25 minutes
+    on 2026-11-13. Alpaca rejects a buy-stop whose trigger is already below
+    the market (422 "stop price must be greater than current price"). That
+    lost APP twice and CL once. Right before each call, re-read the live
+    trade. Put the trigger above BOTH the high of day and the live price by
+    about 0.1%. If the price is already through the setup, skip it rather
+    than chase. *(2026-11-13)*
+14. **Stage the 9:45 tickets in advance.** Have `orscan.py` (opening-range
+    table) and the staging script tested before 9:30. At 9:45:00, compute the
+    ranges and send the orders immediately. On 2026-11-13 the first order went
+    out at 9:58, and by then APP had already broken out. *(2026-11-13)*
+15. **In a weak tape, breakouts fail fast. Two failures in a day mean stop.**
+    With SPY -1% and QQQ -2%, 3 of 4 filled breakouts (FISV, ABT, COP) closed
+    back under their level within 10-25 minutes. Once two breakouts have
+    failed in a session, place no new breakout entries until SPY is back
+    above its open. Cancel the waiting triggers too. *(2026-11-13)*
+16. **Rule 8 is not free: cut on a failed breakout only when the stop is also
+    close.** On 2026-11-13 the early cut helped on ABT and COP (both went on
+    to hit their stops; it saved about $17) and hurt on FISV (cut at 62.51 for
+    -$17.64; the 62.22 stop was never touched and the stock traded 63.68 by
+    2:29 PM, about +$31 if held). Net, the rule cost money that day. Cut early
+    when price closes under the level AND has already given back more than
+    half the distance to the stop, or when the market is falling with it.
+    Otherwise let the bracket work. *(2026-11-13, time machine review)*
+17. **Move the stop to breakeven once the trade is up and the tape turns.**
+    Use `replace_order_by_id` on the bracket's stop leg. A working stop leg
+    shows `held`, and `get_orders status=open` does NOT list held legs.
+    Check it with `get_order_by_id`. *(2026-11-13)*
+18. **Size the risk with `size.py --max-loss 30`.** It can only lower
+    `max_loss_per_trade_usd`. With a $150 daily limit that counts every
+    entry in full, $30 a trade allows 5 entries. *(2026-11-13)*
+19. **Flatten one position at a time.** `ticket.py flatten` replaces
+    `trader/orders.json`, so record each exit's `result` before staging the
+    next flatten. Otherwise use `ticket.py fill` for the earlier one, which
+    is what happened to ABT. *(2026-11-13)*
+
+20. **Desk agents that only do arithmetic should be script loops.** Live
+    model agents stopped after a few cycles (broker, exit, entry, risk and
+    pelosi all handed back early). The ones rebuilt as a Python `loop.py`
+    kept running at no token cost. Start the desk with script loops; keep
+    live agents only for the broker and news. *(2026-11-13)*
+21. **Check that a report's fields are real before trusting the pipeline.**
+    desk-budget reported "plans sized" while every item was null, so the risk
+    dry-run had nothing to check for 30 minutes. Print one full item when a
+    new agent first reports. *(2026-11-13)*
 
 ## Session log
+
+### 2026-11-13 (Fri), paper account
+
+**Setup.** The session started on schedule at 8:57 AM ET. Pre-market scan:
+535 liquid names, 74 setups. Opening ranges at 9:45, bracket buy-stops from
+9:58. SPY fell about 1% from its open and tech fell about 3% (Nvidia's CEO
+left); money rotated into staples, utilities and healthcare.
+
+**Mistakes.**
+- First order at 9:58, not 9:45: the opening-range script was written and
+  debugged after the bell. APP broke out in that gap. -> Rule 14.
+- Three buy-stops were rejected (APP twice, CL once) because the price had
+  passed the trigger by the time the order call went through. -> Rule 13.
+- Took two more breakouts (ABT, COP) after the first one had already failed
+  in a falling market. Both failed within 25 minutes. -> Rule 15.
+- Cut FISV on the first close under its level; it then ran without touching
+  the stop. -> Rule 16.
+- Recorded the ABT exit with `ticket.py fill` because a second `flatten` had
+  replaced its ticket. -> Rule 19.
+
+**Trades.**
+| symbol | entry | stop | target | qty | max loss | result |
+| --- | --- | --- | --- | --- | --- | --- |
+| LVS | 40.15 (10:03, buy-stop 40.14) | 39.79, raised to 40.15 at 11:31 | 40.84 (2R) | 85 | $29.75 | stopped at breakeven 12:08: **$0.00** |
+| FISV | 62.93 (10:02, buy-stop 62.92) | 62.22 | 64.32 (2R) | 42 | $29.40 | cut at 62.51 (10:15): **-$17.64** |
+| ABT | 109.22 (11:04, buy-stop 109.18) | 108.55 | 110.44 (2R) | 36 | $22.68 | cut at 108.85 (11:30): **-$13.32** |
+| COP | 142.44 (11:14, buy-stop 142.40) | 141.67 | 143.86 (2R) | 28 | $20.44 | cut at 141.89 (11:30): **-$15.40** |
+| V | buy-stop 427.05 | 424.86 | 431.43 | 9 | $19.71 | never triggered, canceled 11:31 |
+| APP, CL | rejected by Alpaca (422) | | | | | not placed |
+
+**Day:** -$46.36 (paper equity $99,941.13). Four filled trades, none won.
+$102.27 of the $150 daily risk was used. No entries after 11:14: the breakout
+gate (SPY above its open) stayed closed for the rest of the session.
+
+**Time machine review (as of 2:29 PM).** Holding the original brackets: ABT
+and COP hit their stops (-1.0R each, worse than the cuts); FISV was at +1.06R
+and LVS at +0.1R, both still open. The early cuts cost about $31 on FISV and
+saved about $17 on ABT and COP.
+
+**Process changes made today.**
+- Autotrade switch: `ticket.py auto on|off|status` (paper only).
+- `size.py --max-loss`, `ticket.py lock`, and a shared order lock so the main
+  session and the app's chat cannot both stage an order at once.
+- A trading desk of eleven agents, one per skill, reporting to
+  `trader/desk/`, with the main session as the only trader. See
+  `docs/desk-agents.md`.
+- Saladi, the desktop app: live ticker, charts, the desk by step, chat,
+  urgent alerts, installer and in-app updates. See `docs/saladi.md`.
+
+**Plan for the next session.**
+1. Before 9:30: start the desk as script loops; have the opening-range table
+   and the staging script tested (Rule 14).
+2. 9:45:00: stage the best two or three breakouts at once, triggers 0.1%
+   above both the range high and the live price (Rule 13).
+3. Trade breakouts only while SPY is above its open; stop after two failures
+   (Rule 15).
+4. Let brackets work unless the cut test in Rule 16 is met.
+5. 3:30 PM: cancel unfilled triggers. 3:55 PM: flat.
 
 ### 2026-11-12 (Thu), paper account
 

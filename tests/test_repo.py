@@ -42,7 +42,7 @@ class Repo(unittest.TestCase):
         local = {".claude", "trader"}  # per-user settings and trading state, never committed
         root = sorted(d for d in os.listdir(ROOT) if not d.startswith(".git") and d not in local)
         self.assertEqual(root, sorted([".claude-plugin", "CLAUDE.md", "LICENSE", "MACHINE_LEARNING.md",
-                                       "README.md", "tests"] + SKILLS))
+                                       "README.md", "docs", "tests"] + SKILLS))
 
     def test_frontmatter_name_and_description(self):
         for s in SKILLS:

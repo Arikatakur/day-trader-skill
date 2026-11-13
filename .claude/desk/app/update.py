@@ -16,7 +16,7 @@ import threading
 import time
 import urllib.request
 
-SLUG = "Arikatakur/day-trader-skill"
+SLUG = "Arikatakur/saladi"
 API = "https://api.github.com/repos/%s/releases/latest" % SLUG
 ASSET = "Saladi-Setup.exe"
 HERE = getattr(sys, "_MEIPASS", None) or os.path.dirname(os.path.abspath(__file__))
